@@ -1,0 +1,33 @@
+  # We are using GELF output plugin to send the message
+  # to the GELF protocol on GrayLog. However the origin
+  # plugin did not support multiple workers so don't forget
+  # to apply this patch to ensure multiple workers function is operational
+  # https://github.com/hotschedules/fluent-plugin-gelf-hs/pull/8
+  
+  <match kubernetes.var.log.containers.**_namespaceA_**>
+    @type copy
+    <store>
+      @type gelf
+      @log_level warn
+      include_tag_key true
+      host "#{ENV['FLUENT_GRAYLOG_HOST']}"
+      port "#{ENV['FLUENT_GRAYLOG_PORT']}"
+      add_msec_time true
+      protocol udp
+      @id namespaceA_graylog
+      <buffer>
+        @type file
+        path /var/log/fluentd-buffers/kubernetes.namespaceA.buffer
+        retry_type exponential_backoff
+        flush_thread_count 10
+        flush_thread_interval 2
+        flush_mode immediate
+        retry_forever
+        retry_max_interval 30
+        chunk_limit_size "4M"
+        queue_limit_length "600"
+        overflow_action drop_oldest_chunk
+        total_limit_size 2192MB
+      </buffer>
+    </store>
+  </match>

@@ -1,0 +1,12 @@
+ # Developers can filter based on the NameSpace - PodName - Container Name (in POD)
+ # Kubernetes usually follow this pattern kubernetes.<path to logs>.<pod name>.<namespace>.<container name>.<container id>
+ # Installation step detail https://github.com/rubrikinc/fluent-plugin-throttle
+ <filter kubernetes.var.log.containers.**_namespaceA_**>
+    @type throttle
+    group_key kubernetes.labels.app
+    group_bucket_limit      1500
+    group_bucket_period_s   60
+    group_reset_rate_s      -1
+    group_warning_delay_s    5
+    group_drop_logs false
+  </filter>

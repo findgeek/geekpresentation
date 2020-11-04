@@ -1,0 +1,111 @@
+  # Please read all these parts carefully and tune-up based on your demand.
+  # First we create the ConfigMap using Glob to read all the config files
+{{- $root := . }}
+{{- range .Values.configGlobs }}
+{{- range $path, $bytes := $root.Files.Glob . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-{{ base $path | trimSuffix ".json" }}
+  labels:
+    chart: "{{ $.Chart.Name }}-{{ $.Chart.Version }}"
+    heritage: "{{ $.Release.Service }}"
+    release: "{{ $.Release.Name }}"
+    fluentdconf: main
+data:
+  {{ base $path }}: |-
+{{ tpl ($root.Files.Get $path) $root | indent 4}}
+{{- end }}
+{{- end }}
+---  
+  # There are some config files following the particular $path
+  # Example this is file for namespaceA (namespaceA.conf)
+  <filter kubernetes.var.log.containers.**_namespaceA_**>
+    @type throttle
+    group_key kubernetes.labels.app
+    group_bucket_limit      1500
+    group_bucket_period_s   60
+    group_reset_rate_s      -1
+    group_warning_delay_s    5
+    group_drop_logs false
+  </filter>
+  
+  # Example this is file for namespaceB (namespaceB.conf)
+  <filter kubernetes.var.log.containers.**_namespaceB_**>
+    @type throttle
+    group_key kubernetes.labels.app
+    group_bucket_limit      1500
+    group_bucket_period_s   60
+    group_reset_rate_s      -1
+    group_warning_delay_s    5
+    group_drop_logs false
+  </filter>
+---
+  # Deploy a pod with 2 containers running inside
+  # The k8s-sidecar container (FluentD-config) helps to collect all configMap and mount into the pod
+  # The fluentd container takes main responsibility to run FluentD service with all loaded file.  
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "fluentd.fullname" . }}-main
+  labels:
+    app.kubernetes.io/name: {{ include "fluentd.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app: {{ template "fluentd.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+spec:
+  replicas: {{ .Values.replicaCount.fluentd }}
+  selector:
+    matchLabels:
+      app: {{ template "fluentd.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "fluentd.name" . }}
+        role: main
+        release: {{ .Release.Name }}
+        {{- if .Values.podAnnotations }}
+      annotations:
+{{ toYaml .Values.podAnnotations | trim | indent 8 }}
+    {{- end }}
+    spec:
+      serviceAccountName: {{ template "fluentd.fullname" . }}
+      containers:
+      - env:
+        - name: LABEL
+          value: fluentdconf
+        - name: FOLDER
+          value: /fluentd/etc/
+        - name: RESOURCE
+          value: both
+        image: kiwigrid/k8s-sidecar:0.1.20
+        imagePullPolicy: IfNotPresent
+        name: fluentd-config
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /fluentd/etc
+          name: fluentd-etc-volume
+      - name: fluentd
+        resources:
+{{ toYaml .Values.resources.fluentd | trim | indent 10 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        env:
+        - name: FLUENT_GRAYLOG_HOST
+          value: "{{ .Values.gelf.host }}"
+        - name: FLUENT_GRAYLOG_PORT
+          value: "{{ .Values.gelf.port }}"
+        - name: K8S_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: fluentd-etc-volume
+          mountPath: /fluentd/etc
+      terminationGracePeriodSeconds: 3
+      volumes:
+      - name: fluentd-etc-volume
+        emptyDir: {}
