@@ -1,0 +1,25 @@
+ # Using prometheus fluentd plugin & flowcount plugin
+ # https://github.com/fluent/fluent-plugin-prometheus
+ # https://github.com/tagomoris/fluent-plugin-flowcounter
+   <store>
+      @type flowcounter
+      tag flow.count
+      @label @flowcountall
+      count_keys *
+      unit day
+      aggregate tag
+      output_style tagged
+      delete_idle true
+    </store>
+    <store>
+      @type prometheus
+      <metric>
+        name fluentd_aggregator_output_status_num_records_total
+        type counter
+        desc The total number of outgoing records
+        <labels>
+          app $.kubernetes.labels.app
+          ns $.kubernetes.namespace_name
+        </labels>
+      </metric>
+    </store>
